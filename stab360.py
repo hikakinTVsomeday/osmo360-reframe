@@ -105,6 +105,11 @@ def build_world_path(plan, h, fps, sigma_s=0.8):
 if __name__ == '__main__':
     mode, a1, a2, plans, clip, outp = sys.argv[1:7]
     sig = float(sys.argv[7]) if len(sys.argv) > 7 else 0.8
+    if mode == 'gyro':  # 2026-11-09: clips can be 50 fps (Osmo 360 in 50p) or 29.97; the camera writes its rate
+        sf = json.load(open(a1)).get('clip', {}).get('sensor_fps')
+        if sf and abs(sf - 50) < 0.5: FPS = 50.0
+        elif sf and abs(sf - 25) < 0.5: FPS = 25.0
+        elif sf and abs(sf - 60) < 0.5: FPS = 60000 / 1001
     C = gyro_C(a1, a2) if mode == 'gyro' else image_C(a1, a2)
     h = heading(C)
     plan = json.load(open(plans, encoding='utf-8'))[clip]

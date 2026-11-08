@@ -10,7 +10,7 @@ This is an unofficial personal project. It is **not affiliated with, endorsed by
 
 - Reads the camera's own per-frame orientation, which the Osmo 360 stores inside the `.OSV`, and uses it to stabilize (rotation only, 3 axes).
 - Stitches the two fisheye lenses on the fly and cuts out a normal perspective view in the direction you specify.
-- Renders 29.97 fps source to 50 fps output. With `blend`, each output frame mixes the two nearest source frames after each has been de-rotated, which avoids the "move, move, stop" judder of frame repetition.
+- Renders 29.97 fps or 50 fps source to 50 fps output (the source rate is read from the camera's metadata). With `blend`, each output frame mixes the two nearest source frames after each has been de-rotated, which avoids the "move, move, stop" judder of frame repetition.
 - Writes HEVC Main 10 (`hvc1`), 3840×2160, 50 fps, bt709, timescale 50000, AAC 192 kbps stereo, matching Osmo Action footage so the two can be joined as-is.
 
 ## What is automatic and what is not
@@ -32,9 +32,9 @@ None of the scripts call an AI service. PyTorch is used as a GPU array library, 
 - An NVIDIA GPU with CUDA, plus hardware HEVC decode and HEVC Main 10 encode (NVDEC/NVENC).
 - Python 3 with PyTorch (CUDA build), NumPy and Pillow, plus `opencv-python` for `rot360.py`, `jitter2.py` and `upright2.py`. `pip install -r requirements.txt` installs the Python packages (install the CUDA build of PyTorch first, see the note in that file).
 - `ffmpeg` and `ffprobe` built with CUDA support (`-hwaccel cuda`, `scale_cuda`, `hevc_nvenc`).
-- Developed and tested on Windows. `preview.py` and `preview_path.py` look for the Windows Arial font and fall back to a tiny built-in font if it is missing; edit the path at the top of those files on other systems.
+- Developed and tested on Windows. `preview.py`, `preview_path.py` and `stabcheck.py` look for the Windows Arial font and fall back to a tiny built-in font if it is missing; edit the path at the top of those files on other systems.
 
-The code assumes the recording settings it was built on: 3840×3840 per lens, 29.97 fps, and a 2048×1024 `.LRF` proxy file. Other modes need code changes.
+The code assumes the recording settings it was built on: 3840×3840 per lens, 29.97 fps or 50 fps, and a 2048×1024 `.LRF` proxy file. Other modes need code changes.
 
 Rough speed on the author's PC: about 70 seconds to render 20 seconds of output.
 
@@ -76,7 +76,9 @@ python stab360.py   gyro gyro_clip.json gyrocal.json plans.json clip stab_clip.j
 python render360s.py . calib.json path/to/clip.OSV stab_clip.json out.mp4 - - blend
 ```
 
-`render360s.py` arguments after `out.mp4` are `[t_end|-] [max_out_frames|-] [blend]`. `stab360.py` takes an optional last argument for the `cam` heading smoothing in seconds (default 0.8).
+`render360s.py` arguments after `out.mp4` are `[t_end|-] [max_out_frames|-] [blend|-] [t_start]`. With `t_start` the render starts at that source time (the decoders seek there), so you can render only a part of a long clip, e.g. `... out.mp4 75.0 - blend 52.5` for 52.5–75.0 s. `stab360.py` takes an optional last argument for the `cam` heading smoothing in seconds (default 0.8).
+
+Before the slow 4K render you can check the planned angles on the low-res proxy: `python stabcheck.py . calib.json path/to/clip.LRF stab_clip.json "12-31.5,58-66" 1.5 check.jpg clip` writes a contact sheet (5 tiles per row) of what `render360s.py` will show at those moments, using the same orientation and view path.
 
 If you use one fixed angle, you can skip `preview.py`.
 
@@ -90,7 +92,7 @@ If you use one fixed angle, you can skip `preview.py`.
 |---|---|---|
 | Orientation | `osvmeta.py` (reads the camera's own attitude) → `stab360.py gyro` | `rot360.py` + `upright2.py` + `stab360.py image` (image-based; it drifted: 146° of "up" error in 90 s in the author's test) |
 | Rendering | `render360s.py` | `render360.py` (yaw-only correction, repeats frames for 30→50 fps) with `motion.py` |
-| Checking an angle plan | none | `preview_path.py` (uses the old yaw-only path from `motion.py`, so it can differ from the stabilized render), `eqcheck.py` |
+| Checking an angle plan | `stabcheck.py` (proxy frames with the same orientation and view path as `render360s.py`) | `preview_path.py` (uses the old yaw-only path from `motion.py`, so it can differ from the stabilized render), `eqcheck.py` |
 | Shared | `geom360.py`, `path360.py`, `gyrocmp.py` (imported by the scripts above) | |
 
 The legacy scripts are not needed for the normal workflow. `rot360.py` is still used once per camera to align the gyro.
@@ -168,7 +170,7 @@ DJI Osmo 360 の `.OSV` ファイルを、揺れを止めた横長の 4K（3840�
 
 - Osmo 360 が `.OSV` の中に毎コマ書き込んでいる「カメラの向き」の記録を読み、揺れ止めに使う（回転の3軸）。
 - 2つの魚眼レンズの絵をその場でつなぎ、指定した方向をふつうの四角い画面で切り出す。
-- 1秒29.97枚の元映像から50枚を作る。`blend` を付けると、近い2枚をそれぞれ向きを打ち消してから混ぜるので、同じ絵の繰り返しによるカクつきが出ない。
+- 1秒29.97枚または50枚の元映像から50枚を作る（元の枚数はカメラの記録から読む）。`blend` を付けると、近い2枚をそれぞれ向きを打ち消してから混ぜるので、同じ絵の繰り返しによるカクつきが出ない。
 - HEVC Main 10（`hvc1`）・3840×2160・50fps・bt709・タイムスケール 50000・AAC 192kbps ステレオで保存する。Osmo Action の動画とそのままつなげられる。
 
 ## 自動の所と、人か AI が決める所
@@ -181,16 +183,18 @@ DJI Osmo 360 の `.OSV` ファイルを、揺れを止めた横長の 4K（3840�
 - Python 3、PyTorch（CUDA 版）、NumPy、Pillow
 - `opencv-python`（一度だけの `rot360.py` と、測定用の `jitter2.py`・`upright2.py` で使う）
 - CUDA 対応の `ffmpeg` と `ffprobe`
-- Windows で作って確かめた。`preview.py` と `preview_path.py` は Windows のフォント（Arial）の場所を直接書いているので、ほかの OS では直す
+- Windows で作って確かめた。`preview.py`・`preview_path.py`・`stabcheck.py` は Windows のフォント（Arial）を探し、無ければ小さな内蔵の字で表示する（きれいな字にしたければ、ほかの OS ではファイルの先頭の場所を直す）
 
-撮影設定は、1レンズ 3840×3840・29.97fps・代理ファイル `.LRF` 2048×1024 を前提にしている。
+撮影設定は、1レンズ 3840×3840・29.97fps か 50fps・代理ファイル `.LRF` 2048×1024 を前提にしている。
 
 ## 使い方
 
 コマンドは上の英語の「Quick start」と同じ。流れは次のとおり。
 
 1. カメラ1台につき一度：`calib.py` でレンズを合わせ、`osvmeta.py`・`rot360.py`・`gyrocmp.py` でセンサーの軸と時刻を合わせる。同梱の `calib_osmo360.json`・`gyrocal_osmo360.json` は作者のカメラ1台の値。試すだけならそのまま使えるが、カメラごとにレンズの値が少し違うので、ちゃんと使うなら自分のカメラでやり直す（`calib.py` には、同じ瞬間の2レンズの絵を5組、`f0_0.png`〜`f4_1.png` の名前で用意する。上級者向け）。
-2. クリップごと：`osvmeta.py` → `preview.py`（一覧画像）→ `plans.json` を書く → `stab360.py` → `render360s.py`（最後に `blend`）。
+2. クリップごと：`osvmeta.py` → `preview.py`（一覧画像）→ `plans.json` を書く → `stab360.py` → `stabcheck.py`（書き出す前の確認）→ `render360s.py`（`blend`）。
+
+`render360s.py` の最後に開始秒を付けると、その秒から書き出す（長いクリップの一部だけを速く書き出せる）。`stabcheck.py` は、軽い代理ファイル `.LRF` から、`render360s.py` がその時刻に映す絵と同じものを一覧にする。4K の書き出しは時間がかかるので、向きが合っているかを先にここで見る。
 
 `plans.json` の書き方は英語の「plans.json」の表と同じ（例は `examples/plans.example.json`）。キー名は `lock`（`mode` ではない。書かないとエラーになる）。`"world"` は景色に固定。`"cam"` はカメラに固定ではなく、左右の向きだけを約0.8秒の幅でならしてついていく（手の細かい揺れは追わず、ゆっくりした向き変えに追従する）。上下は両方とも水平が基準。
 

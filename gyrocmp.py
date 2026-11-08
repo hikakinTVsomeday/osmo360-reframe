@@ -25,11 +25,19 @@ class Gyro:
     def __init__(self, g):
         T = []; Q = []
         fr = g['frames']
+        # Attitude timestamps wrap at 2**32 microseconds while frame timestamps
+        # remain 64-bit. Align each attitude packet with its own frame clock.
+        wrap_period = 2 ** 32
+        attitude_times = [
+            r['att_ts'] + round((r['frame_ts'] - r['att_ts']) / wrap_period) * wrap_period
+            if r.get('att_ts') is not None else None
+            for r in fr
+        ]
         for j, r in enumerate(fr):
             qs = r.get('q') or []
             if not qs: continue
-            t0 = r['att_ts']
-            t1 = fr[j + 1]['att_ts'] if j + 1 < len(fr) and fr[j + 1].get('att_ts') else t0 + 1006 * len(qs)
+            t0 = attitude_times[j]
+            t1 = attitude_times[j + 1] if j + 1 < len(fr) and attitude_times[j + 1] is not None else t0 + 1006 * len(qs)
             for i, q in enumerate(qs):
                 T.append(t0 + (t1 - t0) * i / len(qs)); Q.append(q)
         Q = np.array(Q, float); Q /= np.linalg.norm(Q, axis=1, keepdims=True)
