@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>360動画 切り出しの仕組み</title>
+<meta name="description" content="DJI Osmo 360 の .OSV を、揺れを止めた 4K・50fps の横長動画にする自作プログラム集の仕組み。">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d2126;
+  --muted: #5b636e;
+  --line: #d9d5cb;
+  --line-strong: #a9a397;
+  --accent: #1b6a86;
+  --accent-soft: #e2f0f5;
+  --ai: #a8501b;
+  --ai-soft: #fbe9dc;
+  --code-bg: #efede7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141618;
+    --card: #1d2024;
+    --ink: #e7e5e0;
+    --muted: #a2a9b3;
+    --line: #363b42;
+    --line-strong: #5a616b;
+    --accent: #6bc0dc;
+    --accent-soft: #18323b;
+    --ai: #efa36d;
+    --ai-soft: #3a271b;
+    --code-bg: #24282d;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141618;
+  --card: #1d2024;
+  --ink: #e7e5e0;
+  --muted: #a2a9b3;
+  --line: #363b42;
+  --line-strong: #5a616b;
+  --accent: #6bc0dc;
+  --accent-soft: #18323b;
+  --ai: #efa36d;
+  --ai-soft: #3a271b;
+  --code-bg: #24282d;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  font-size: 16px;
+  line-height: 1.8;
+}
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 72px; }
+h1 { font-size: 1.45rem; line-height: 1.45; margin: 0 0 12px; }
+h2 { font-size: 1.22rem; line-height: 1.5; margin: 44px 0 12px; padding-top: 20px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; line-height: 1.55; margin: 28px 0 8px; }
+h4 { font-size: 1rem; margin: 22px 0 6px; }
+p, li, dd, h1, h2, h3, h4 { overflow-wrap: anywhere; }
+p { margin: 0 0 12px; }
+ul, ol { padding-left: 1.4em; margin: 0 0 12px; }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+.lead { color: var(--muted); }
+code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 14px;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+.tw { overflow-x: auto; margin: 0 0 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.6; background: var(--card); }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; }
+table.small { font-size: 13px; }
+table.small th, table.small td { padding: 5px 6px; }
+.three {
+  counter-reset: n;
+  list-style: none;
+  padding: 0;
+}
+.three li {
+  counter-increment: n;
+  position: relative;
+  padding: 10px 12px 10px 44px;
+  margin: 0 0 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.three li::before {
+  content: counter(n);
+  position: absolute;
+  left: 12px; top: 10px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--card);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+.answer {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+.answer p:last-child { margin-bottom: 0; }
+.short { font-weight: 700; }
+.io {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.io dt { font-weight: 700; color: var(--muted); font-size: 13px; }
+.io dd { margin: 0 0 6px; }
+.io dd:last-child { margin-bottom: 0; }
+.like { color: var(--muted); border-left: 3px solid var(--line-strong); padding-left: 10px; }
+.mark-ai { color: var(--ai); font-weight: 700; }
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps li {
+  counter-increment: s;
+  position: relative;
+  padding: 8px 10px 8px 40px;
+  margin: 0 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.steps li::before {
+  content: counter(s);
+  position: absolute; left: 12px; top: 8px;
+  font-weight: 700; color: var(--accent);
+}
+figure { margin: 16px 0 20px; }
+figure svg { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; }
+figcaption { color: var(--muted); font-size: 13px; text-align: center; margin-top: 6px; }
+nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 16px 0 8px; font-size: 15px; }
+nav.toc ol { margin: 4px 0 0; }
+details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0 0 14px; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+.note { font-size: 14px; color: var(--muted); }
+/* diagram classes */
+.g-group { fill: none; stroke: var(--line-strong); stroke-dasharray: 4 4; }
+.g-box { fill: var(--card); stroke: var(--line-strong); }
+.g-file { fill: var(--code-bg); stroke: var(--line); }
+.g-ai { fill: var(--ai-soft); stroke: var(--ai); stroke-width: 1.5; }
+.g-out { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.g-t { fill: var(--ink); font-size: 12px; }
+.g-tb { fill: var(--ink); font-size: 12.5px; font-weight: 700; }
+.g-s { fill: var(--muted); font-size: 11px; }
+.g-m { fill: var(--ink); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.g-f { fill: var(--ink); font-size: 10.5px; font-family: ui-monospace, Consolas, monospace; }
+.g-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.g-ah { fill: var(--muted); }
+.g-ring { fill: none; stroke: var(--line-strong); }
+.g-wedge { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.g-dash { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; }
+.g-ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+.g-dot { fill: var(--ink); }
+.g-acc { fill: var(--accent); font-size: 11px; font-weight: 700; }
+.g-src { fill: var(--card); stroke: var(--accent); stroke-width: 1.5; }
+.g-outc { fill: var(--card); stroke: var(--ink); stroke-width: 1.5; }
+.g-rep { fill: var(--ai-soft); stroke: var(--ai); stroke-width: 1.5; }
+.g-link { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.g-n { fill: var(--ink); font-size: 9px; }
+.g-warn { fill: var(--ai); font-size: 10px; font-weight: 700; }
+.g-w { fill: var(--muted); font-size: 10px; }
+.g-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Osmo 360 の動画を、ふつうの横長動画にする仕組み</h1>
+<p class="lead">DJI Osmo 360 の .OSV（このカメラの元の動画ファイル。前後2つのレンズの映像・音・センサーの記録が1つに入っている）から、決めた方向だけを切り出し、揺れを止めて、ふつうの横長動画にする自作プログラム集の説明。DJI とは関係のない個人の道具。</p>
+
+<nav class="toc" aria-label="目次">
+<strong>目次</strong>
+<ol>
+<li><a href="#three">3行でいうと</a></li>
+<li><a href="#qa">3つの質問への答え</a></li>
+<li><a href="#flow">全体の流れ</a></li>
+<li><a href="#steps">各ステップ</a></li>
+<li><a href="#result">測った結果</a></li>
+<li><a href="#split">AI がやる所、プログラムがやる所</a></li>
+<li><a href="#limits">できないこと</a></li>
+<li><a href="#need">動かすのに必要なもの</a></li>
+</ol>
+</nav>
+
+<h2 id="three">3行でいうと</h2>
+<ol class="three">
+<li>背中合わせの2つの魚眼レンズ（180度より広い範囲を1枚の丸い絵に収めるレンズ。端ほど景色が曲がって写る）の映像から、見たい方向だけを四角く切り出して、4K（横3840×縦2160画素）・50fps（1秒に50枚）の動画にする。</li>
+<li>揺れ止めには、カメラ自身が .OSV に書き込んでいる「その瞬間カメラがどちらを向いていたか」の記録を使う。毎コマその向きを打ち消してから切り出す。ここは計算だけで、AI は使わない。</li>
+<li>「いつ・どの方向を映すか」だけは誰かが決めて <code>plans.json</code>（アングルの予定表）に書く。これまでは AI（Claude）が全景の一覧画像を見て書いた。人が手で書いてもいい。</li>
+</ol>
+
+<h2 id="qa">3つの質問への答え</h2>
+
+<h3>動画を通すだけで楽になる？</h3>
+<div class="answer">
+<p class="short">手間のかかる所は全部自動。ただし、今はボタン1つではない。</p>
+<p>揺れ止め・2つのレンズのつなぎ合わせ・書き出しは、コマンドを打てばあとはプログラムが全部やる。1コマずつ手で直す作業はない。クリップ1本ごとに、次のコマンドを順に打つ。</p>
+</div>
+<div class="tw">
+<table>
+<thead><tr><th>順</th><th>やること</th><th>自動か</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>osvmeta.py</code>：.OSV からカメラの向きの記録を取り出す</td><td>自動</td></tr>
+<tr><td>2</td><td><code>preview.py</code>：全景の一覧画像を作る</td><td>自動</td></tr>
+<tr><td>3</td><td>一覧画像を見て、<code>plans.json</code> にアングルを書く</td><td class="mark-ai">人か AI の判断が要る</td></tr>
+<tr><td>4</td><td><code>stab360.py</code>：毎コマの向きと、アングルの道筋を作る</td><td>自動</td></tr>
+<tr><td>5</td><td><code>render360s.py</code>：4K・50fps で書き出す（20秒の動画で約70秒）</td><td>自動</td></tr>
+</tbody>
+</table>
+</div>
+<p>このほかに、カメラ1台につき一度だけの準備が2つある（つなぎ目合わせと、センサーの軸合わせ）。作った時に使ったカメラの結果（<code>calib_osmo360.json</code>、<code>gyrocal_osmo360.json</code>）はもうあるので、同じカメラなら毎回はやらない。</p>
+<p>アングルを1つに決めてしまうなら、2と3は飛ばせる。残るのは 1・4・5 の3つのコマンドだけ。これを1回で流すまとめ役のスクリプトは、まだない。</p>
+
+<h3>AI は必要？</h3>
+<div class="answer">
+<p class="short">揺れ止めと書き出しに AI は要らない。アングル選びには、今は AI か人が要る。</p>
+</div>
+<ul>
+<li>スクリプトの中に、AI を呼び出す所は1つもない（全部の .py を確認した）。やっているのは、ファイルの読み出し、回転の計算、画像の座標の計算だけ。</li>
+<li>PyTorch（本来は AI を作るための部品集）を使っているが、ここでは「GPU でたくさんの計算を一度にやる電卓」として使っている。GPU は画像を描くための計算部品で、単純な計算を何千も同時にこなせる。学習済みの AI モデルは1つも入っていない。</li>
+<li>一度だけ使う <code>calib.py</code> は、「数字を少しずつ直して、ずれを小さくしていく」という、AI の学習と同じやり方を使う。ただ、決めるのはレンズの数字12個だけで、AI を作っているわけではない。</li>
+<li>AI が担当していたのは手順3だけ。Claude が一覧画像を見て「この時刻は右後ろに見どころがある」と判断し、<code>plans.json</code> を書いた。この判断はプログラムには入っていない。</li>
+</ul>
+<p>人が代わりにやるなら、こうする。</p>
+<ol>
+<li><code>preview.py</code> が作った一覧画像を開く。1枚に、指定した秒ごとの全景が 2列×5段で並ぶ。黄色の縦線が左右の向き（45度ごと、数字つき）、水色の横線が上下の −30度・0度・+30度。</li>
+<li>映したい物が写っている時刻と、その位置の黄色い線の数字を読む。</li>
+<li><code>plans.json</code> に1行ずつ書く（書き方は下の「手順3」）。</li>
+</ol>
+<p>最低限は、アングル1つ。たとえば次の数行で「持っている人の前方を、カメラの向きにゆっくりついていきながら映す」になる。</p>
+<pre><code>{
+  "0001": [
+    {"t": 0, "lock": "cam", "yaw": 180, "pitch": 0, "fov": 100}
+  ]
+}</code></pre>
+<p><code>"0001"</code> はクリップの名前で、コマンドにも同じ名前を書く。<code>yaw</code> は左右の向き、<code>pitch</code> は上下の向き、<code>fov</code> は画角（窓の広さ）で、どれも単位は度。<code>"lock": "cam"</code> は「カメラの向きについていく」という指定（くわしくは手順3）。このコードでは yaw 0 がレンズ0の正面で、コードの注記ではレンズ0は持つ人の側を向く（自撮りのアングルが yaw 0 付近になっているのはそのため）。だから yaw 180 が持つ人の前方になる。持ち方が違う時は、一覧画像で確かめてから書く。</p>
+
+<figure>
+<svg viewBox="0 0 340 210" role="img" aria-labelledby="f2t">
+<title id="f2t">yaw・pitch・fov の見取り図</title>
+<defs>
+<marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="g-ah"/></marker>
+</defs>
+<text class="g-s" x="100" y="18" text-anchor="middle">上から見た図（yaw と fov）</text>
+<circle class="g-ring" cx="100" cy="115" r="68"/>
+<path class="g-wedge" d="M100,115 L111.8,48.0 A68,68 0 0 1 163.9,138.3 Z"/>
+<line class="g-ref" x1="100" y1="115" x2="100" y2="47"/>
+<line class="g-dash" x1="100" y1="115" x2="158.9" y2="81"/>
+<path class="g-arrow" d="M127.4,39.8 A80,80 0 0 1 161.3,63.6" marker-end="url(#ah2)"/>
+<text class="g-s" x="128" y="30">＋は右回り</text>
+<text class="g-s" x="100" y="42" text-anchor="middle">0°</text>
+<text class="g-s" x="172" y="119">90°</text>
+<text class="g-s" x="100" y="199" text-anchor="middle">180°</text>
+<text class="g-s" x="28" y="119" text-anchor="end">−90°</text>
+<text class="g-s" x="95" y="78" text-anchor="end">レンズ0の正面</text>
+<text class="g-t" x="140" y="120" text-anchor="middle">fov 100°</text>
+<text class="g-acc" x="161" y="76">yaw 60°</text>
+<circle class="g-dot" cx="100" cy="115" r="5"/>
+<text class="g-s" x="268" y="18" text-anchor="middle">横から見た図（pitch）</text>
+<line class="g-ref" x1="205" y1="115" x2="332" y2="115"/>
+<text class="g-s" x="332" y="131" text-anchor="end">0（水平）</text>
+<line class="g-line" x1="215" y1="115" x2="305.9" y2="62.5" marker-end="url(#ah2)"/>
+<text class="g-acc" x="296" y="52" text-anchor="middle">＋30（上）</text>
+<line class="g-line" x1="215" y1="115" x2="308.6" y2="162.7" marker-end="url(#ah2)"/>
+<text class="g-acc" x="296" y="184" text-anchor="middle">−27（下）</text>
+<circle class="g-dot" cx="215" cy="115" r="5"/>
+</svg>
+<figcaption>yaw は左右の向き、pitch は上下の向き、fov は四角い窓の横の広さ（どれも度）。</figcaption>
+</figure>
+
+<h3>どう動いているか</h3>
+<div class="answer">
+<p>大きなガラス玉の内側に、2つのレンズの丸い絵を貼り合わせて、360度の景色を作る。玉の真ん中に立って、四角い窓枠を決めた方向にかざす。窓から見えた部分が、出力の1枚になる。</p>
+<p>カメラが揺れるとガラス玉も一緒に回ってしまうが、どれだけ回ったかはカメラのセンサーの記録で分かる。だから窓のほうをその分だけ回し返す。これを1秒に50回くり返す。</p>
+</div>
+<p>順番は次の図のとおり。</p>
+
+<h2 id="flow">全体の流れ</h2>
+<figure>
+<svg viewBox="0 0 340 600" role="img" aria-labelledby="f1t">
+<title id="f1t">全体の流れ</title>
+<defs>
+<marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="g-ah"/></marker>
+</defs>
+<rect class="g-group" x="6" y="6" width="328" height="122" rx="10"/>
+<text class="g-s" x="18" y="26">カメラ1台につき一度だけ</text>
+<rect class="g-box" x="18" y="36" width="146" height="46" rx="8"/>
+<text class="g-m" x="91" y="55" text-anchor="middle">calib.py</text>
+<text class="g-t" x="91" y="73" text-anchor="middle">つなぎ目合わせ</text>
+<rect class="g-box" x="176" y="36" width="146" height="46" rx="8"/>
+<text class="g-m" x="249" y="55" text-anchor="middle">rot360 → gyrocmp</text>
+<text class="g-t" x="249" y="73" text-anchor="middle">センサーの軸合わせ</text>
+<line class="g-arrow" x1="91" y1="82" x2="91" y2="95" marker-end="url(#ah1)"/>
+<line class="g-arrow" x1="249" y1="82" x2="249" y2="95" marker-end="url(#ah1)"/>
+<rect class="g-file" x="22" y="96" width="138" height="24" rx="12"/>
+<text class="g-f" x="91" y="112" text-anchor="middle">calib_osmo360.json</text>
+<rect class="g-file" x="178" y="96" width="142" height="24" rx="12"/>
+<text class="g-f" x="249" y="112" text-anchor="middle">gyrocal_osmo360.json</text>
+
+<rect class="g-group" x="6" y="142" width="328" height="450" rx="10"/>
+<text class="g-s" x="18" y="162">クリップごと</text>
+<rect class="g-file" x="22" y="172" width="138" height="28" rx="14"/>
+<text class="g-m" x="91" y="191" text-anchor="middle">clip.OSV</text>
+<rect class="g-file" x="180" y="172" width="138" height="28" rx="14"/>
+<text class="g-m" x="249" y="191" text-anchor="middle">clip.LRF</text>
+<line class="g-arrow" x1="91" y1="200" x2="91" y2="215" marker-end="url(#ah1)"/>
+<line class="g-arrow" x1="249" y1="200" x2="249" y2="215" marker-end="url(#ah1)"/>
+<rect class="g-box" x="18" y="216" width="146" height="46" rx="8"/>
+<text class="g-m" x="91" y="235" text-anchor="middle">1. osvmeta.py</text>
+<text class="g-t" x="91" y="253" text-anchor="middle">向きの記録を取り出す</text>
+<rect class="g-box" x="176" y="216" width="146" height="46" rx="8"/>
+<text class="g-m" x="249" y="235" text-anchor="middle">2. preview.py</text>
+<text class="g-t" x="249" y="253" text-anchor="middle">全景の一覧画像</text>
+<line class="g-arrow" x1="91" y1="262" x2="91" y2="277" marker-end="url(#ah1)"/>
+<line class="g-arrow" x1="249" y1="262" x2="249" y2="277" marker-end="url(#ah1)"/>
+<rect class="g-file" x="36" y="278" width="110" height="24" rx="12"/>
+<text class="g-f" x="91" y="294" text-anchor="middle">gyro.json</text>
+<rect class="g-ai" x="176" y="278" width="146" height="56" rx="8"/>
+<text class="g-tb" x="249" y="300" text-anchor="middle">3. 人か AI が見て</text>
+<text class="g-t" x="249" y="320" text-anchor="middle">plans.json を書く</text>
+<line class="g-arrow" x1="91" y1="302" x2="91" y2="349" marker-end="url(#ah1)"/>
+<line class="g-arrow" x1="249" y1="334" x2="249" y2="349" marker-end="url(#ah1)"/>
+<rect class="g-box" x="18" y="350" width="304" height="62" rx="8"/>
+<text class="g-m" x="170" y="370" text-anchor="middle">4. stab360.py</text>
+<text class="g-t" x="170" y="389" text-anchor="middle">毎コマのカメラの向き＋アングルの道筋</text>
+<text class="g-s" x="170" y="405" text-anchor="middle">使う：gyro.json・plans.json・gyrocal</text>
+<line class="g-arrow" x1="170" y1="412" x2="170" y2="427" marker-end="url(#ah1)"/>
+<rect class="g-file" x="115" y="428" width="110" height="24" rx="12"/>
+<text class="g-f" x="170" y="444" text-anchor="middle">stab.json</text>
+<line class="g-arrow" x1="170" y1="452" x2="170" y2="467" marker-end="url(#ah1)"/>
+<rect class="g-box" x="18" y="468" width="304" height="62" rx="8"/>
+<text class="g-m" x="170" y="488" text-anchor="middle">5. render360s.py</text>
+<text class="g-t" x="170" y="507" text-anchor="middle">GPU で切り出して 4K・50fps で書き出す</text>
+<text class="g-s" x="170" y="523" text-anchor="middle">使う：clip.OSV・calib・stab.json</text>
+<line class="g-arrow" x1="170" y1="530" x2="170" y2="545" marker-end="url(#ah1)"/>
+<rect class="g-out" x="60" y="546" width="220" height="36" rx="18"/>
+<text class="g-tb" x="170" y="569" text-anchor="middle">横長の mp4 ができる</text>
+</svg>
+<figcaption>オレンジの所だけが、人か AI の判断。ほかはプログラムが計算する。</figcaption>
+</figure>
+
+<h2 id="steps">各ステップ</h2>
+
+<h3>準備A（カメラ1台につき一度）：2つのレンズのつなぎ目を合わせる — <code>calib.py</code></h3>
+<dl class="io">
+<dt>入れる物</dt><dd>同じ瞬間の、レンズ0とレンズ1の絵の組を5組（<code>f0_0.png</code>〜<code>f4_1.png</code>）。この切り出しはスクリプトに入っていないので、ffmpeg などで別に作る。</dd>
+<dt>出る物</dt><dd><code>calib.json</code>（作った時のカメラ用は <code>calib_osmo360.json</code>）。レンズの中心の位置、焦点（どれだけ広く写るか）、ゆがみ、2つのレンズの向きの小さなずれ、明るさの差、の12個の数字。</dd>
+</dl>
+<p>魚眼レンズの絵では、レンズの正面から θ 度ずれた方向が、丸い絵の中心から「f ×（θ ＋ kθ³）」の距離に写る、と考える。f と k はレンズごとの数字で、k はゆがみの補正。2つのレンズは背中合わせなので、ちょうど真横（レンズの軸から83〜97度）の帯は両方に写っている。そこで約2万の方向を選び（持ち手や手が写る下のほうは除く）、両方のレンズの色の差を測る。差が小さくなるように12個の数字を少しずつ直す。これを600回くり返す。</p>
+<p class="like">たとえるなら、薄い紙に描いた2枚の絵を重ねて窓に透かし、線がぴったり重なるまで少しずつずらす作業。</p>
+
+<h3>準備B（カメラ1台につき一度）：センサーの軸と時計を合わせる — <code>rot360.py</code> → <code>gyrocmp.py</code></h3>
+<dl class="io">
+<dt>入れる物</dt><dd>試しのクリップ1本の、向きの記録（手順1の <code>gyro.json</code>）と、映像から測った回転（<code>rot360.py</code> の結果）。</dd>
+<dt>出る物</dt><dd><code>gyrocal.json</code>（作った時のカメラ用は <code>gyrocal_osmo360.json</code>）。</dd>
+</dl>
+<p>センサーにとっての「前・右・下」と、映像にとっての「前・右・下」は、同じとは限らない。記録の時刻もわずかにずれる。そこでまず <code>rot360.py</code> が、映像だけから毎コマの回転を測る。絵の中の目立つ点（角や模様）を数百個選び、次のコマでどこへ動いたかを追う。歩く人のように景色と違う動きをする点は外す。この作業には OpenCV（画像処理の定番の部品集）を使う。</p>
+<p>次に <code>gyrocmp.py</code> が、センサーの時刻を −60〜+60 ミリ秒の範囲でずらしながら、両者が一番よく合う「軸の対応」と「時刻のずれ」を探す。</p>
+<p>作った時のカメラでは、合わせたあとの差は1コマあたり中央値（並べた時の真ん中の値）で 0.07〜0.08度だった。時刻のずれはクリップ 0048 で 2.4ミリ秒、0050 で 1.0ミリ秒。軸の対応は2本で 0.7度しか違わなかったので、同じカメラなら一度で足りる。</p>
+<p class="like">たとえるなら、新しい腕時計とコンパスを、駅の時計と北に合わせておくこと。一度合わせれば、同じ道具ならそのまま使える。</p>
+
+<h3>手順1：向きの記録を取り出す — <code>osvmeta.py</code></h3>
+<dl class="io">
+<dt>入れる物</dt><dd><code>clip.OSV</code></dd>
+<dt>出る物</dt><dd><code>gyro.json</code>。毎コマの撮影時刻と、そのコマの間のカメラの向き（1コマに33〜34個）。</dd>
+</dl>
+<p>カメラの中には、傾きを1秒に1000回はかるセンサー（ジャイロ）がある。スマホのゲームで本体を傾けて操作できるのも、同じ種類の部品のおかげ。Osmo 360 は、ジャイロなどの値から計算した「カメラがどちらを向いていたか」を、.OSV の中に毎コマ書き込んでいる。</p>
+<p>.OSV の中身は MP4 と同じで、「箱の中に箱が入っている」形をしている。映像2本と音のほかに、DJI が <code>djmd</code> と名前をつけた記録の列があり、毎コマの情報が protobuf（Google が作った、データを小さく詰めて保存する書き方）で入っている。<code>osvmeta.py</code> は箱を順に開けてこの列を探し、中の「向き」を取り出す。</p>
+<p>向きはクォータニオンで書かれている。クォータニオンは、向きを4つの数で表す書き方。「左右に何度・上下に何度・傾き何度」の3つの角度で表すと、真上を向いた時などに計算が崩れることがあるので、センサーや3Dの計算ではこちらがよく使われる。</p>
+<p>Python に最初から入っている機能だけで動く。GPU も DJI のソフトも要らない。</p>
+<p class="like">たとえるなら、段ボールを開けると小箱があり、その中に日記帳がある。日記帳には「この瞬間、カメラはこっちを向いていた」が1秒に約1000行書いてある。</p>
+
+<h3>手順2：全景の一覧画像を作る — <code>preview.py</code>（と <code>sheet.py</code>）</h3>
+<dl class="io">
+<dt>入れる物</dt><dd><code>clip.LRF</code>（カメラが一緒に保存する低画質の代理ファイル。2048×1024 で、2つの魚眼の絵が横に並んでいる）と <code>calib.json</code>。</dd>
+<dt>出る物</dt><dd>jpg の一覧画像。1枚に 2列×5段。</dd>
+</dl>
+<p>指定した秒ごとに、2つの魚眼の絵をつなげて、正距円筒の 960×480 の絵にする。正距円筒は世界地図と同じ広げ方で、横が左右360度、縦が真上から真下までの180度。黄色の縦線は左右の向き（−180〜180度、45度ごと、数字つき）、水色の横線は上下の −30度・0度・+30度。左下に時刻が入る。</p>
+<p><code>sheet.py</code> は別の用途。複数のファイルについて、長さの10%・50%・90%の3か所の絵を1行に並べる（.OSV なら片方のレンズの絵だけ）。どのファイルに何が写っているかをざっと見る用で、360度の全景にはならない。</p>
+<p class="note">注意：一覧画像はカメラ基準のままで、水平に直していない。カメラを前後や左右に傾けて持っていた場面では、上下の目盛りが本当の水平とずれる。書き出しでは上下の角度を水平基準で使うので、その分だけずれる。</p>
+
+<h3>手順3：アングルを決めて <code>plans.json</code> に書く（人か AI）</h3>
+<p>クリップ名ごとに、アングルを時刻順に並べる。1行が1つのアングル。</p>
+<div class="tw">
+<table>
+<thead><tr><th>項目</th><th>意味</th></tr></thead>
+<tbody>
+<tr><td><code>t</code></td><td>この秒から、このアングルになる</td></tr>
+<tr><td><code>lock</code></td><td><code>"world"</code>（景色に固定）か <code>"cam"</code>（カメラについていく）</td></tr>
+<tr><td><code>yaw</code></td><td>左右の向き（度）。0 がレンズ0の正面、＋が右回り</td></tr>
+<tr><td><code>pitch</code></td><td>上下の向き（度）。＋が上、0 が水平</td></tr>
+<tr><td><code>fov</code></td><td>横の画角（度）。窓の広さで、小さいほど寄って写る。例のファイルでは 90〜110</td></tr>
+<tr><td><code>ref</code></td><td><code>world</code> の時だけ使う。<code>yaw</code> を読んだ一覧画像の時刻。省くと <code>t</code> と同じ</td></tr>
+<tr><td><code>ease</code></td><td>前のアングルから何秒かけて移るか。移り終わるのが <code>t</code> の時刻。省くと 1.5秒</td></tr>
+<tr><td><code>note</code></td><td>メモ。プログラムは読まない</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong><code>world</code>（景色に固定）</strong>：<code>ref</code> の瞬間のカメラの向きを基準に、その方向を景色に対して固定する。カメラを振り回しても、映す方向は動かない。首を回しても、壁の時計から目を離さないような映し方。</li>
+<li><strong><code>cam</code>（カメラについていく）</strong>：カメラの左右の向きについていく。ただし、約0.8秒の幅でならした向きを使う。手の細かい揺れにはついていかず、ゆっくりした向き変えにだけついていく。上下は水平が基準のまま。自撮りで自分を映し続ける時に使う。車のヘッドライトに近い。車が曲がれば光も曲がるが、路面のガタガタはここで吸収される。</li>
+</ul>
+<p>「ならす」は、前後の値を、近いものほど重くして平均すること。細かいギザギザが消えて、ゆっくりした動きだけが残る。アングルの切り替えは、<code>ease</code> 秒かけて「ゆっくり動き出して、ゆっくり止まる」動きでつなぐ。</p>
+<p>例（3つのアングル）：</p>
+<pre><code>{
+  "0001": [
+    {"t": 0,    "lock": "world", "ref": 0.5,  "yaw": 60,  "pitch": 20,  "fov": 100, "note": "見どころ1"},
+    {"t": 5.5,  "ease": 1.5, "lock": "cam",   "yaw": -10, "pitch": -27, "fov": 105, "note": "自撮り"},
+    {"t": 12.5, "ease": 1.5, "lock": "world", "ref": 12.5, "yaw": 110, "pitch": 15, "fov": 100, "note": "見どころ2"}
+  ]
+}</code></pre>
+<p>決めたアングルの確認には <code>preview_path.py</code> がある。小さな試し画像（480×270）を一定の間隔で並べ、顔が切れていないか、傾いていないかを見る。ただしこれは前の版の計算（映像から推定した左右の首振りだけ）で道筋を作るので、<code>motion.py</code> の結果が要る。揺れ止め版の書き出しとは少し違うことがある。</p>
+
+<h3>手順4：毎コマの向きとアングルの道筋を作る — <code>stab360.py</code></h3>
+<dl class="io">
+<dt>入れる物</dt><dd><code>gyro.json</code>、<code>gyrocal_osmo360.json</code>、<code>plans.json</code>、クリップ名。</dd>
+<dt>出る物</dt><dd><code>stab.json</code>。元のコマ（1秒に29.97枚）ごとの、カメラの向き（3×3 の数の表＝回転行列。向きを掛け算で扱える形）と、映す向き（yaw・pitch・fov）。</dd>
+</dl>
+<ol>
+<li>センサーの向きを、準備Bの対応表で「カメラの軸」に直す。時刻のずれもここで足す。</li>
+<li>「下」を重力の方向に決める（センサーは重力の向きを知っている）。だから地平線はいつもまっすぐになる。</li>
+<li>毎コマ、カメラ（レンズ0）が左右どちらを向いていたかを出す。</li>
+<li><code>plans.json</code> の各行を、この向きを使って「景色に対する向き」に直す。行と行のあいだは <code>ease</code> の間なめらかにつなぐ。最後に、前後2コマほどの幅で軽くならす。</li>
+</ol>
+
+<h3>手順5：4K・50fps で書き出す — <code>render360s.py</code></h3>
+<dl class="io">
+<dt>入れる物</dt><dd><code>clip.OSV</code>、<code>calib_osmo360.json</code>、<code>stab.json</code>。最後に <code>blend</code> と書くと、コマの間を混ぜる（ふだんは付ける）。</dd>
+<dt>出る物</dt><dd>mp4。</dd>
+</dl>
+<p>ffmpeg（動画を開く・変換する・保存するための定番の無料ソフト）が、GPU の動画専用の回路を使って、2本の魚眼映像（それぞれ 3840×3840）をほどき、生の絵を Python に渡す。</p>
+<p>出力の1枚は 3840×2160＝約830万画素。これを GPU で全部同時に計算する。1つの画素について、やることは次のとおり。</p>
+<ol class="steps">
+<li>見る方向を出す。yaw・pitch・fov で決まる四角い窓の、その画素の位置を通る方向。</li>
+<li>そのコマのカメラの向きを打ち消す（3×3 の表を掛ける）。</li>
+<li>レンズ0とレンズ1の、どちらの正面に近いかで使うレンズを決める。境目のあたり（設定値は8度）は、両方の色を少しずつ割合を変えて混ぜ、つなぎ目を目立たなくする。</li>
+<li>準備Aの式「f ×（θ ＋ kθ³）」で、魚眼の丸い絵の中の位置を出す。レンズ1は明るさの差も直す。</li>
+<li>その位置の色を取る。明るさは周りの16画素から、色は周りの4画素から、なめらかに計算する。色の情報は明るさの半分の細かさで持っている（ふつうの動画と同じ形式）。</li>
+</ol>
+
+<h4>29.97枚から50枚へ（<code>blend</code>）</h4>
+<p>元の映像は1秒に29.97枚、出力は50枚。出力の1枚は、元の映像の「コマとコマの間」に当たることが多い。</p>
+<figure>
+<svg viewBox="0 0 340 222" role="img" aria-labelledby="f3t">
+<title id="f3t">29.97枚から50枚へのつなぎ方</title>
+<text class="g-s" x="4" y="14">前の版：近い1枚をそのまま出す</text>
+<text class="g-s" x="8" y="45">元</text>
+<text class="g-s" x="4" y="86">出力</text>
+<line class="g-link" x1="46" y1="76" x2="46" y2="48"/>
+<line class="g-link" x1="102" y1="76" x2="139.4" y2="48"/>
+<line class="g-link" x1="158" y1="76" x2="139.4" y2="48"/>
+<line class="g-link" x1="214" y1="76" x2="232.8" y2="48"/>
+<line class="g-link" x1="270" y1="76" x2="232.8" y2="48"/>
+<line class="g-link" x1="326" y1="76" x2="326.2" y2="48"/>
+<rect class="g-src" x="39" y="34" width="14" height="14" rx="2"/>
+<rect class="g-src" x="132.4" y="34" width="14" height="14" rx="2"/>
+<rect class="g-src" x="225.8" y="34" width="14" height="14" rx="2"/>
+<rect class="g-src" x="319.2" y="34" width="14" height="14" rx="2"/>
+<text class="g-n" x="46" y="44.5" text-anchor="middle">0</text>
+<text class="g-n" x="139.4" y="44.5" text-anchor="middle">1</text>
+<text class="g-n" x="232.8" y="44.5" text-anchor="middle">2</text>
+<text class="g-n" x="326.2" y="44.5" text-anchor="middle">3</text>
+<circle class="g-outc" cx="46" cy="82" r="6"/>
+<circle class="g-outc" cx="102" cy="82" r="6"/>
+<circle class="g-rep" cx="158" cy="82" r="6"/>
+<circle class="g-outc" cx="214" cy="82" r="6"/>
+<circle class="g-rep" cx="270" cy="82" r="6"/>
+<circle class="g-outc" cx="326" cy="82" r="6"/>
+<text class="g-warn" x="158" y="102" text-anchor="middle">前と同じ</text>
+<text class="g-warn" x="270" y="102" text-anchor="middle">前と同じ</text>
+
+<text class="g-s" x="4" y="126">blend：前後2枚を、時刻の割合で混ぜる</text>
+<text class="g-s" x="8" y="157">元</text>
+<text class="g-s" x="4" y="198">出力</text>
+<line class="g-link" x1="46" y1="188" x2="46" y2="160" stroke-width="3.2" stroke-opacity="1"/>
+<line class="g-link" x1="102" y1="188" x2="46" y2="160" stroke-width="1.76" stroke-opacity="0.58"/>
+<line class="g-link" x1="102" y1="188" x2="139.4" y2="160" stroke-width="2.24" stroke-opacity="0.72"/>
+<line class="g-link" x1="158" y1="188" x2="139.4" y2="160" stroke-width="2.72" stroke-opacity="0.86"/>
+<line class="g-link" x1="158" y1="188" x2="232.8" y2="160" stroke-width="1.28" stroke-opacity="0.44"/>
+<line class="g-link" x1="214" y1="188" x2="139.4" y2="160" stroke-width="1.28" stroke-opacity="0.44"/>
+<line class="g-link" x1="214" y1="188" x2="232.8" y2="160" stroke-width="2.72" stroke-opacity="0.86"/>
+<line class="g-link" x1="270" y1="188" x2="232.8" y2="160" stroke-width="2.24" stroke-opacity="0.72"/>
+<line class="g-link" x1="270" y1="188" x2="326.2" y2="160" stroke-width="1.76" stroke-opacity="0.58"/>
+<line class="g-link" x1="326" y1="188" x2="326.2" y2="160" stroke-width="3.2" stroke-opacity="1"/>
+<rect class="g-src" x="39" y="146" width="14" height="14" rx="2"/>
+<rect class="g-src" x="132.4" y="146" width="14" height="14" rx="2"/>
+<rect class="g-src" x="225.8" y="146" width="14" height="14" rx="2"/>
+<rect class="g-src" x="319.2" y="146" width="14" height="14" rx="2"/>
+<text class="g-n" x="46" y="156.5" text-anchor="middle">0</text>
+<text class="g-n" x="139.4" y="156.5" text-anchor="middle">1</text>
+<text class="g-n" x="232.8" y="156.5" text-anchor="middle">2</text>
+<text class="g-n" x="326.2" y="156.5" text-anchor="middle">3</text>
+<circle class="g-outc" cx="46" cy="194" r="6"/>
+<circle class="g-outc" cx="102" cy="194" r="6"/>
+<circle class="g-outc" cx="158" cy="194" r="6"/>
+<circle class="g-outc" cx="214" cy="194" r="6"/>
+<circle class="g-outc" cx="270" cy="194" r="6"/>
+<circle class="g-outc" cx="326" cy="194" r="6"/>
+<text class="g-w" x="102" y="215" text-anchor="middle">4:6</text>
+<text class="g-w" x="158" y="215" text-anchor="middle">8:2</text>
+<text class="g-w" x="214" y="215" text-anchor="middle">2:8</text>
+<text class="g-w" x="270" y="215" text-anchor="middle">6:4</text>
+</svg>
+<figcaption>0.1秒ぶん。四角が元のコマ、丸が出力のコマ。下の段は、線が太いほど多く混ぜる。</figcaption>
+</figure>
+<div class="tw">
+<table class="small">
+<thead><tr><th>出力の何枚目</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr></thead>
+<tbody>
+<tr><td>元の映像のどこ</td><td>0.0</td><td>0.6</td><td>1.2</td><td>1.8</td><td>2.4</td><td>3.0</td></tr>
+<tr><td>前の版（近い1枚）</td><td>0</td><td>1</td><td>1</td><td>2</td><td>2</td><td>3</td></tr>
+<tr><td><code>blend</code></td><td>0</td><td>0と1を 4:6</td><td>1と2を 8:2</td><td>1と2を 2:8</td><td>2と3を 6:4</td><td>3</td></tr>
+</tbody>
+</table>
+</div>
+<p>前の版は近い1枚をそのまま出していたので、5枚に2枚が前と同じ絵になり、「動く・動く・止まる」のガクガクになった。<code>blend</code> を付けると、前後2枚を、それぞれ自分の向きを打ち消してから、時刻の割合で混ぜる。向きを消したあとなので、2枚の違いは歩いて進んだ分（数ピクセル）だけで、混ぜてもほとんどぼけない。</p>
+
+<h4>保存</h4>
+<p>GPU の動画書き出し専用の回路（NVENC）で、HEVC（動画を小さく保存する方式の1つ。H.265 とも呼ぶ）の10bit（色の段階が細かい形式）で保存する。平均 50Mbps、最大 70Mbps。音は .OSV の音を AAC（ふつうの動画で使われる音の圧縮方式）192kbps・48kHz・ステレオにする。</p>
+<p>形式は Osmo Action の動画とそのままつなげられるようにそろえてある：HEVC Main 10・hvc1・3840×2160・50fps・bt709（4K/HD 動画の標準の色の決まり）・タイムスケール 50000（ファイルの中で時刻を数える細かさ）。</p>
+
+<h2 id="result">測った結果</h2>
+<p><code>jitter2.py</code> で、アングルが動かない区間について、画面全体の動きの中央値から測った。数字は4K画面のピクセル。「揺れ」は0.4秒より速い細かい動きの大きさ、「むら」はコマごとの動きのばらつき（「動く・動く・止まる」だと大きくなる）。</p>
+<div class="tw">
+<table class="small">
+<thead><tr><th>区間</th><th>前の版</th><th>揺れを止める版</th></tr></thead>
+<tbody>
+<tr><td>0048 13.5〜19.5秒</td><td>揺れ 左右29・上下25、むら 9.5</td><td>揺れ 左右9.5・上下2.3、むら 0.7</td></tr>
+<tr><td>0048 29.5〜35.5秒</td><td>揺れ 左右17・上下18、むら 5.2</td><td>揺れ 左右4.7・上下2.2、むら 0.4</td></tr>
+<tr><td>0048 63〜70秒</td><td>揺れ 左右23・上下37、むら 7.0</td><td>揺れ 左右4.7・上下4.6、むら 0.6</td></tr>
+<tr><td>0050 5.2〜10.8秒</td><td>揺れ 左右28・上下38、むら 9.3</td><td>揺れ 左右4.9・上下2.5、むら 0.5</td></tr>
+<tr><td>0050 24.6〜29.8秒</td><td>揺れ 左右22・上下32、むら 8.9</td><td>揺れ 左右5.0・上下2.1、むら 0.9</td></tr>
+<tr><td>0050 35〜40.5秒</td><td>揺れ 左右34・上下40、むら 8.2</td><td>揺れ 左右6.4・上下3.4、むら 0.5</td></tr>
+<tr><td>（参考）Osmo Action 0751</td><td>揺れ 左右22〜27・上下9〜15、むら 0.7〜1.0</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p>表から計算すると、揺れは左右で前の版の約3分の1〜6分の1、上下で約8分の1〜15分の1。どちらもアクションカメラより小さい。むらはアクションカメラと同じくらいになった。</p>
+<p class="note">測る区間にアングルの切り替え（<code>ease</code> の間の大きな首振り）が入ると、揺れの数字が50以上に跳ねる。区間は <code>plans.json</code> を見て、切り替えの手前で切る。</p>
+
+<h2 id="split">AI がやる所、プログラムがやる所</h2>
+<div class="tw">
+<table>
+<thead><tr><th>作業</th><th>担当</th><th>中身</th></tr></thead>
+<tbody>
+<tr><td>つなぎ目合わせ（準備A）</td><td>プログラム</td><td>数字12個を少しずつ直す計算。学習済みの AI は使わない</td></tr>
+<tr><td>センサーの軸合わせ（準備B）</td><td>プログラム</td><td>点の追跡と回転の計算</td></tr>
+<tr><td>向きの記録を取り出す（手順1）</td><td>プログラム</td><td>ファイルを読むだけ</td></tr>
+<tr><td>全景の一覧画像（手順2）</td><td>プログラム</td><td>2つの絵をつなげて広げる</td></tr>
+<tr><td>見どころ選び・アングル決め（手順3）</td><td class="mark-ai">AI か人</td><td>コードには入っていない。今までは Claude が一覧画像を見て書いた</td></tr>
+<tr><td>試し画像で確かめる</td><td>画像作りはプログラム、見るのは AI か人</td><td><code>preview_path.py</code></td></tr>
+<tr><td>揺れ止めと道筋（手順4）</td><td>プログラム</td><td>回転の計算となめらかなつなぎ</td></tr>
+<tr><td>切り出し・つなぎ・書き出し（手順5）</td><td>プログラム</td><td>GPU での座標の計算と ffmpeg</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">できないこと</h2>
+<ul>
+<li>360度カメラの1方向あたりの細かさは、ふつうのカメラより粗い（1度あたり約20画素）。4K に引き伸ばすので少し甘くなる。</li>
+<li>カメラを素早く振り回した場面は、元の映像そのものがぶれている。向きは合っても、ぶれた絵はそのまま。</li>
+<li>消せるのは回転だけ。カメラごと人が歩いて上下左右に動く分（位置の揺れ）は消せない。近くの人ほど少し揺れて見える。</li>
+<li><code>blend</code> を付けると、近くを素早く横切る人に、うっすら二重の影が出ることがある。気になる時は <code>blend</code> を付けずに書き出す（そのかわり、むらが戻る）。</li>
+<li>音はふつうのステレオなので、「声のする方を向く」は作れない。</li>
+<li>見どころを自動で選ぶ機能はない。AI か人が決める。</li>
+<li>撮影設定を決め打ちしている：1レンズ 3840×3840、1秒に29.97枚、代理ファイル 2048×1024。ほかの設定で撮ったファイルは、コードの数字を直さないと動かない。</li>
+<li>一覧画像と確認画像には、代理ファイル .LRF が要る。</li>
+<li>NVIDIA の GPU がないと動かない。</li>
+</ul>
+
+<h2 id="need">動かすのに必要なもの</h2>
+<ul>
+<li>Windows で作って動かした。<code>preview.py</code> と <code>preview_path.py</code> は Windows のフォント（Arial）の場所を直接書いている。</li>
+<li>NVIDIA の GPU。CUDA（NVIDIA の GPU で計算するための仕組み）を使う。ffmpeg の読み込み（<code>-hwaccel cuda</code>・<code>scale_cuda</code>）と書き出し（<code>hevc_nvenc</code> の10bit HEVC）も GPU の専用回路を使う。</li>
+<li>Python 3、PyTorch（CUDA 対応版）、NumPy（数の表を扱う部品）、Pillow（画像を読み書きする部品）、OpenCV（<code>opencv-python</code>）。</li>
+<li>ffmpeg と ffprobe（CUDA に対応したもの）。</li>
+<li>速さの目安（作った時の PC）：揺れ止め版の書き出しは 20秒の動画で約70秒。前の版の <code>render360.py</code> は1秒あたり約12コマ。</li>
+</ul>
+
+<details>
+<summary>ファイルの一覧</summary>
+<div class="tw">
+<table class="small">
+<thead><tr><th>ファイル</th><th>役目</th><th>いつ使う</th></tr></thead>
+<tbody>
+<tr><td><code>osvmeta.py</code></td><td>.OSV から向きの記録を取り出す</td><td>クリップごと</td></tr>
+<tr><td><code>preview.py</code></td><td>全景の一覧画像</td><td>クリップごと</td></tr>
+<tr><td><code>stab360.py</code></td><td>毎コマの向きとアングルの道筋（<code>gyro</code> と <code>image</code> の2通り。ふだんは <code>gyro</code>）</td><td>クリップごと</td></tr>
+<tr><td><code>render360s.py</code></td><td>揺れ止め版の書き出し</td><td>クリップごと</td></tr>
+<tr><td><code>calib.py</code></td><td>2つのレンズのつなぎ目合わせ</td><td>カメラ1台につき一度</td></tr>
+<tr><td><code>rot360.py</code></td><td>映像だけで毎コマの回転を測る</td><td>カメラ1台につき一度（<code>gyrocmp.py</code> の材料）</td></tr>
+<tr><td><code>gyrocmp.py</code></td><td>センサーと映像を比べて軸と時刻を合わせる</td><td>カメラ1台につき一度</td></tr>
+<tr><td><code>geom360.py</code></td><td>レンズの式・方向の計算など、共通の計算部品</td><td>ほかのスクリプトが読む</td></tr>
+<tr><td><code>path360.py</code></td><td>道筋の部品（ならし・なめらかなつなぎ）と、前の版の道筋</td><td>ほかのスクリプトが読む</td></tr>
+<tr><td><code>preview_path.py</code></td><td>決めたアングルの試し画像（前の版の計算）</td><td>確認したい時</td></tr>
+<tr><td><code>sheet.py</code></td><td>複数ファイルの中身をざっと並べる</td><td>最初に何が写っているか見る時</td></tr>
+<tr><td><code>motion.py</code></td><td>映像から左右の首振りだけを推定（前の版）</td><td>前の版、<code>preview_path.py</code> 用</td></tr>
+<tr><td><code>upright2.py</code></td><td>柱など縦の線から水平を推定（前の版・映像だけの版）</td><td>今はふだん使わない</td></tr>
+<tr><td><code>render360.py</code></td><td>前の版の書き出し（左右だけ補正、近い1枚を出す）</td><td>今はふだん使わない</td></tr>
+<tr><td><code>jitter2.py</code></td><td>揺れとむらを測る</td><td>比べたい時</td></tr>
+<tr><td><code>eqcheck.py</code></td><td>水平の補正を確かめる画像</td><td>前の版の確認用</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note"><code>osvmeta.py</code> は、OpenOSV（Apache-2.0）の説明書き（ファイルの中身の説明と protobuf の定義）を読んで書いた。OpenOSV のプログラム自体は使っていないし、実行もしていない。</p>
+</details>
+
+</main>
+</body>
+</html>

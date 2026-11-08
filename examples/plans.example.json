@@ -1,0 +1,10 @@
+{
+  "clip_a": [
+    {"t": 0,    "lock": "world", "ref": 0.5,  "yaw": 60,  "pitch": 20,  "fov": 100, "note": "first point of interest"},
+    {"t": 5.5,  "ease": 1.5, "lock": "cam",   "yaw": -10, "pitch": -27, "fov": 105, "note": "follow the camera holder"},
+    {"t": 12.5, "ease": 1.5, "lock": "world", "ref": 12.5, "yaw": 110, "pitch": 15, "fov": 100, "note": "second point of interest"}
+  ],
+  "clip_b": [
+    {"t": 0, "lock": "cam", "yaw": 180, "pitch": 0, "fov": 100, "note": "one fixed angle for the whole clip"}
+  ]
+}

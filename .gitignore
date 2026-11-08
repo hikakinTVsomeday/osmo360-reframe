@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+# media and outputs: never commit footage or renders
+*.OSV
+*.osv
+*.LRF
+*.lrf
+*.mp4
+*.mov
+*.wav
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+# per-clip working files
+gyro_*.json
+rot_*.json
+stab_*.json
+motion_*.json
+up_*.json
+plans.json
+previews/
+out/

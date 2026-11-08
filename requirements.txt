@@ -1,0 +1,7 @@
+# Install a CUDA build of PyTorch first, following https://pytorch.org/get-started/locally/
+torch
+numpy
+Pillow
+# only for rot360.py, jitter2.py, upright2.py
+opencv-python
+# Also needed on PATH: ffmpeg and ffprobe built with CUDA / NVENC support (not a pip package).
